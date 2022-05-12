@@ -9,7 +9,7 @@ int comp(const void* a, const void* b) {
 }
 
 void merge(int* v_a, int s_a, int* v_b, int s_b) {
-    int* original_vector = v_a;
+    int* og_vector = v_a;
     int total_size = s_a + s_b;
     int* aux = malloc(sizeof(int)*total_size);
     int aux_i = 0;
@@ -29,12 +29,7 @@ void merge(int* v_a, int s_a, int* v_b, int s_b) {
     }
 
     // Fill the aux vector with the non-empty vector
-    int* non_empty;
-    if(s_a != 0) {
-        non_empty = v_a;
-    } else {
-        non_empty = v_b;
-    }
+    int* non_empty = (s_a != 0) ? v_a : v_b;
 
     while(aux_i != total_size) {
         aux[aux_i] = *non_empty;
@@ -44,15 +39,25 @@ void merge(int* v_a, int s_a, int* v_b, int s_b) {
 
     // Copy the aux vector over the original one
     for(int i = 0; i < total_size; i++) {
-        original_vector[i] = aux[i];
+        og_vector[i] = aux[i];
     }
 }
 
 int main(int argc, char** argv) {
-    int a[6] = {1,4,9,2,3,5};
+    if(argc != 3) exit(1);
+
+    int k = atoi(argv[1]);
+    int n = atoi(argv[2]);
+
+    int a[6] = {1,9,4,6,3,5};
     int* b = a+3;
 
-    merge(a, 3, b, 3);
-
+    qsort(a, 3, sizeof(int), comp);
+    qsort(b, 3, sizeof(int), comp);
     printf("%d %d %d %d %d %d\n", a[0], a[1], a[2], a[3], a[4], a[5]);
+
+    merge(a, 3, b, 3);
+    printf("%d %d %d %d %d %d\n", a[0], a[1], a[2], a[3], a[4], a[5]);
+
+    return 0;
 }
