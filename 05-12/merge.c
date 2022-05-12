@@ -48,6 +48,10 @@ int main(int argc, char** argv) {
 
     int k = atoi(argv[1]);
     int n = atoi(argv[2]);
+    int split_size = n/k;
+    int last_split_size = n - (k-1)*split_size;
+
+    printf("Splits: %d | Tamanho do split: %d | Tamanho do último split: %d\n", k, split_size, last_split_size);
 
     int a[6] = {1,9,4,6,3,5};
     int* b = a+3;
