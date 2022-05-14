@@ -41,6 +41,8 @@ void merge(int* v_a, int s_a, int* v_b, int s_b) {
     for(int i = 0; i < total_size; i++) {
         og_vector[i] = aux[i];
     }
+
+    free(aux);
 }
 
 int main(int argc, char** argv) {
