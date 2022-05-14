@@ -1,15 +1,12 @@
-from collections.abc import Iterable
-from multiprocessing import Pool
+from math import floor
 from typing import Tuple
+from random import randint
 from datetime import datetime
 from functools import wraps
+from multiprocessing import Pool
+from collections.abc import Iterable
 
-
-from math import floor
-from random import randint
 import sys
-
-
 
 def timer(func):
     @wraps(func)
@@ -22,7 +19,6 @@ def timer(func):
             print(f"TEMPO | {func.__name__} | {tempo.total_seconds()}")
 
     return _time_it
-
 
 
 def _order_col(col: Iterable):
@@ -52,13 +48,22 @@ def parallel_universe(unordered_collection: Iterable, splits: int):
     with Pool(splits) as p:
         ordered_sublists = p.map(_order_col, splitted_collection)
 
-    print(f"Ordered sublists before merges: {ordered_sublists}")
+    with open("output.txt", "w") as f:
+        print(f"Ordered sublists before merges:", file=f)
+        for l in ordered_sublists:
+            print(l, file=f)
+
     tupled = make_tuples(ordered_sublists)
     count = 0
     while(len(tupled) > 1):
         with Pool(splits) as p:
             merged_sublists = p.map(merge, tupled)
-        print(f"Merged sublists on iteraction: {count}\n{merged_sublists}")
+
+        with open("output.txt", "a") as f:
+            print(f"Merged sublists on iteraction {count}:", file=f)
+            for l in merged_sublists:
+                print(l, file=f)
+
         tupled = make_tuples(merged_sublists)
         count = count + 1
     ordered_collection = merge(tupled[0])
@@ -94,5 +99,7 @@ if __name__ == "__main__":
 
     k, n = map(int, sys.argv[1:])
 
-    random_vet = [randint(1 << 0, 1 << 10) for _ in range(n)]
-    print(parallel_universe(random_vet, k))
+    random_vet = [randint(1 << 0, 1 << 32) for _ in range(n)]
+    
+    with open("output.txt", "a") as f:
+        print(f"Ordered list:\n{parallel_universe(random_vet, k)}", file=f)
