@@ -133,7 +133,7 @@ if __name__ == "__main__":
     TRANSACTIONS[0] = Transaction(generate_challenge(), None, -1)
 
     # Seta o servidor
-    server = SimpleXMLRPCServer(("localhost", 1515))
+    server = SimpleXMLRPCServer(("localhost", 1515), allow_none=True)
     print("Listening on port 1515...")
     # server.register_multicall_functions()
     server.register_function(getTransactionID, 'getTransactionID')
