@@ -7,7 +7,8 @@ from random import randint
 
 
 NUM_PROCESSES = 6
-MAX_SEED = abs(~(1 << 31))
+# MAX_SEED = abs(~(1 << 31))
+MAX_SEED = 2147483647
 
 def getTransactionID(proxy: xmlrpc.client.ServerProxy, _: int) -> int:
     transactionID = proxy.getTransactionID()
