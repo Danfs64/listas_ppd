@@ -66,7 +66,7 @@ def minerar(proxy: xmlrpc.client.ServerProxy, _: int) -> None:
     else:
         with Pool(processes=NUM_PROCESSES) as pool:
             processes = []
-            for idx in range(NUM_PROCESSES):
+            for _ in range(NUM_PROCESSES):
                 proc = pool.apply_async(solve_challenge, args=(challenge,))
                 processes.append(proc)
 
@@ -90,7 +90,8 @@ def minerar(proxy: xmlrpc.client.ServerProxy, _: int) -> None:
     if   pong ==  1: print(f"A seed {solution} resolveu o challenge!")
     elif pong ==  0: print(f"A seed {solution} não resolve o challenge")
     elif pong == -1: print(f"A TransactionID {curr_trans} é inválida")
-    elif pong ==  2: print(f"A TransactionID {curr_trans} já fora resolvido")
+    elif pong ==  2: print(f"A TransactionID {curr_trans} já fora resolvida")
+    else:            print(f"Algo de errado definitivamente não está certo")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from xmlrpc.server import SimpleXMLRPCServer
 from hashlib import sha1
+import sys
 
 @dataclass
 class Transaction:
@@ -37,7 +38,7 @@ def getTransactionID() -> int:
 def getChallenge(tid: int) -> int:
     ''' * Se `tid` for válido, retorna o valor
         do desafio associado a ele.
-        * Retorne -1 se o `tid` for inválido.
+        * Retorna -1 se o `tid` for inválido.
     '''
     if tid > _get_last_trans():
         return -1
@@ -128,20 +129,29 @@ def check_seed(seed: int, tid: int) -> int:
 
 
 if __name__ == "__main__":
+    # Lê a porta passada como argumento (se não houver porta, usa 1515 como default)
+    n = len(sys.argv)
+    assert n <= 2, f"Exemplos de uso correto:\n{sys.argv[0]} <port>\n{sys.argv[0]}"
+
+    if n == 2:
+        port = int(sys.argv[1])
+    else:
+        port = 1515
+
     # Cria a primeira transação
     set_last_trans(0)
     TRANSACTIONS[0] = Transaction(generate_challenge(), None, -1)
 
     # Seta o servidor
-    server = SimpleXMLRPCServer(("localhost", 1515), allow_none=True)
-    print("Listening on port 1515...")
+    server = SimpleXMLRPCServer(("localhost", port), allow_none=True)
+    print(f"Listening on port {port}...")
     # server.register_multicall_functions()
     server.register_function(getTransactionID, 'getTransactionID')
     server.register_function(getChallenge, 'getChallenge')
     server.register_function(getTransactionStatus, 'getTransactionStatus')
     server.register_function(submitChallenge, 'submitChallenge')
     server.register_function(getWinner, 'getWinner')
-    server.register_function(getSeed, 'getSeed')        
+    server.register_function(getSeed, 'getSeed')
 
     # roda o servidor
     server.serve_forever()
