@@ -6,7 +6,7 @@ import json
 import pika
 
 CONNECTION = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost')
+    pika.ConnectionParameters(host='localhost', heartbeat=600)
 )
 CHANNEL = CONNECTION.channel()
 
@@ -151,6 +151,8 @@ def set_exchanges():
         "challenge": getChallenge(trans)
     })
     CHANNEL.basic_publish(exchange='ppd/challenge', routing_key='', body=body)
+    print("sent first")
+
 
 
 

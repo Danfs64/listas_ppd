@@ -19,7 +19,7 @@ LOCK = Lock()
 
 
 CONNECTION = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
+    pika.ConnectionParameters(host='localhost', heartbeat=600))
 CHANNEL = CONNECTION.channel()
 
 
@@ -122,7 +122,7 @@ def minerar(challenge: int) -> int:
 
 def chal_consume():
     conn = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
+    pika.ConnectionParameters(host='localhost', heartbeat=600))
     channel = conn.channel()
     chal_queue_name = set_chal_exchange(channel)
     print("will start")
