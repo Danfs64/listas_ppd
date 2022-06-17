@@ -29,7 +29,6 @@ def set_chal_exchange(chann):
 
 def set_result_exchange(chann):
     queue_name = set_exchange(chann, 'ppd/result', 'fanout')
-    print(queue_name)
     return queue_name
 
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
@@ -38,7 +37,6 @@ def set_exchange(chann, exchange: str, exchange_type: str) -> str:
 
     queue_name = queue.method.queue
     chann.queue_bind(exchange=exchange, queue=queue_name)
-    print(queue_name)
     return queue_name
 
 
@@ -125,7 +123,6 @@ def chal_consume():
     pika.ConnectionParameters(host='localhost', heartbeat=600))
     channel = conn.channel()
     chal_queue_name = set_chal_exchange(channel)
-    print("will start")
     channel.basic_consume(queue=chal_queue_name, on_message_callback=chal_callback, auto_ack=False)
     channel.start_consuming()
 
@@ -153,7 +150,6 @@ if __name__ == "__main__":
     chal_p = Process(target=chal_consume)
     chal_p.start()
     CHAL_PROCESS_PID = chal_p.pid
-    print(CHAL_PROCESS_PID)
     CHANNEL.basic_consume(queue=resul_queue_name, on_message_callback=resul_callback, auto_ack=True)
     CHANNEL.start_consuming()
 
