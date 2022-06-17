@@ -1,4 +1,5 @@
-from multiprocessing import Pool
+from multiprocessing import Pool, Process
+from asyncio import Lock
 from time import sleep
 from hashlib import sha1
 from random import randint
@@ -6,12 +7,15 @@ import sys
 import json
 
 import pika
+import psutil
 
 CLIENT_ID = None
 
 NUM_PROCESSES = 6
 MAX_SEED = 2147483647
 PROC_DICT = {}
+CHAL_PROCESS_PID = None
+LOCK = Lock()
 
 
 CONNECTION = pika.BlockingConnection(
@@ -19,15 +23,27 @@ CONNECTION = pika.BlockingConnection(
 CHANNEL = CONNECTION.channel()
 
 
-def set_exchanges():
-    CHANNEL.exchange_declare(exchange='ppd/challenge', exchange_type='fanout')
-    result = CHANNEL.queue_declare(queue='', exclusive=True)
-    queue_name = result.method.queue
-    CHANNEL.queue_bind(exchange='ppd/challenge', queue=queue_name)
+def set_chal_exchange(chann):
+    return set_exchange(chann, 'ppd/challenge', 'fanout')
+
+
+def set_result_exchange(chann):
+    queue_name = set_exchange(chann, 'ppd/result', 'fanout')
+    print(queue_name)
+    return queue_name
+
+def set_exchange(chann, exchange: str, exchange_type: str) -> str:
+    chann.exchange_declare(exchange=exchange, exchange_type=exchange_type)
+    queue = chann.queue_declare(queue='', exclusive=True)
+
+    queue_name = queue.method.queue
+    chann.queue_bind(exchange=exchange, queue=queue_name)
+    print(queue_name)
     return queue_name
 
 
 def chal_callback(ch, method, properties, body: str):
+    print("consuming...")
     ch.basic_ack(delivery_tag=method.delivery_tag)
     try:
         message_dict = json.loads(body)
@@ -104,13 +120,42 @@ def minerar(challenge: int) -> int:
                         break
     return solution
 
+def chal_consume():
+    conn = pika.BlockingConnection(
+    pika.ConnectionParameters(host='localhost'))
+    channel = conn.channel()
+    chal_queue_name = set_chal_exchange(channel)
+    print("will start")
+    channel.basic_consume(queue=chal_queue_name, on_message_callback=chal_callback, auto_ack=False)
+    channel.start_consuming()
+
+
+def resul_callback(ch, method, properties, body: str):
+    resul_dict = json.loads(body)
+    if resul_dict['cid'] != CLIENT_ID:
+        global CHAL_PROCESS_PID
+        if CHAL_PROCESS_PID:
+            print(f"Killing process {CHAL_PROCESS_PID} because the challenge was solved by another client")
+            parent = psutil.Process(CHAL_PROCESS_PID)
+            for child in parent.children(recursive=True):
+                child.kill()
+            parent.kill()
+            chal_p = Process(target=chal_consume)
+            chal_p.start()
+            CHAL_PROCESS_PID = chal_p.pid
+
 
 if __name__ == "__main__":
     assert len(sys.argv) == 2, f"Uso correto: {sys.argv[0]} <clientID>"
     CLIENT_ID = int(sys.argv[1])
 
-    chal_queue_name = set_exchanges()
-
-    CHANNEL.basic_consume(queue=chal_queue_name, on_message_callback=chal_callback, auto_ack=False)
+    resul_queue_name = set_result_exchange(CHANNEL)
+    chal_p = Process(target=chal_consume)
+    chal_p.start()
+    CHAL_PROCESS_PID = chal_p.pid
+    print(CHAL_PROCESS_PID)
+    CHANNEL.basic_consume(queue=resul_queue_name, on_message_callback=resul_callback, auto_ack=True)
     CHANNEL.start_consuming()
+
+
 
