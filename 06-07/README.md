@@ -12,3 +12,5 @@ a. Instale os pacotes do `requirements.txt` usando o `pip`
 ```console
 pip install -r requirements.txt
 ```
+
+b. Rode o cliente e o servidor (preferencialmente nessa ordem)
