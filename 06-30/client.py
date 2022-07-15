@@ -55,7 +55,15 @@ if __name__ == "__main__":
         pika.ConnectionParameters(host="localhost", heartbeat=600)
     )
     chann = conn.channel()
-    # TODO mandar msg de check-in
+    #! PRECISA SER UMA QUEUE QUE TODO MUNDO RECEBE TODAS AS MSGS
+    #! TALVEZ PRECISE DECLARAR COMO EXCHANGE FANOUT AO INVES DE QUEUE?
+    chann.queue_declare(queue="check-in")
+    chann.basic_publish(
+        exchange='',
+        routing_key="check-in",
+        body=json.dumps({"pid": pid})
+    )
+    print(f"Eu sou o cliente {pid} e eu fiz meu check-in")
 
     # ESPERAR TODOS OS MEMBROS ENTRAREM
     clients = {pid}
@@ -63,9 +71,15 @@ if __name__ == "__main__":
         new_client = json.loads(body)['pid']
         print(f"Cliente {new_client} fez check-in")
         if new_client not in clients:
+            print(f"Cliente {new_cliente} é um cliente novo")
             clients.add(new_client)
-            #TODO fazer ele remandar seu check-in
-        print(f"Clientes conhecidos: {clients}")
+            # Reenvia o check-in sempre que detecta um cliente novo
+            chann.basic_publish(
+                exchange='',
+                routing_key="check-in",
+                body=json.dumps({"pid": pid})
+            )
+        print(f"Clientes conhecidos ({len(clientes)}): {clients}")
         if len(clients) == NUM_CLIENTS:
             break
     chann.cancel()
@@ -85,9 +99,14 @@ if __name__ == "__main__":
             break
     chann.cancel()
 
-    sorted_votes = list(votes.items()).sort(key=lambda x: x[1])
-    print("LISTA DA VOTAÇÃO")
-    print(sorted_votes)
+    print("RESULTADO DA VOTAÇÃO")
+    print(votes)
+    most_votes = max(votes.values())
+    winner = [pid for pid, n in votes.items() if n == most_votes].sort()[0]
+    print("VENCEDOR")
+    print(winner)
+
+    # GERAÇÃO DO DESAFIO, SE FOR O LÍDER
 
     # RESOLUÇÃO DO DESAFIO
 
