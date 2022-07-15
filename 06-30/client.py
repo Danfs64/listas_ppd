@@ -49,26 +49,30 @@ def minerar(challenge: int) -> int:
     return solution
 
 if __name__ == "__main__":
-    # FAZER CHECKIN NO BROKER
-    pid = randint(0, 1<<32)
+    # INICIALIZAÇÃO DE VARIÁVEIS
+    ## Se for colocar os blocos de código abaixo dentro de funções,
+    ## é valido colocar essas 3 variáveis como globais
+    my_pid = randint(0, 1<<32)
     conn = pika.BlockingConnection(
         pika.ConnectionParameters(host="localhost", heartbeat=600)
     )
     chann = conn.channel()
+
+    # FAZER CHECKIN NO BROKER
     #! PRECISA SER UMA QUEUE QUE TODO MUNDO RECEBE TODAS AS MSGS
     #! TALVEZ PRECISE DECLARAR COMO EXCHANGE FANOUT AO INVES DE QUEUE?
     chann.queue_declare(queue="check-in")
     chann.basic_publish(
         exchange='',
         routing_key="check-in",
-        body=json.dumps({"pid": pid})
+        body=json.dumps({"pid": my_pid})
     )
-    print(f"Eu sou o cliente {pid} e eu fiz meu check-in")
+    print(f"Eu sou o cliente {my_pid} e eu fiz meu check-in")
 
     # ESPERAR TODOS OS MEMBROS ENTRAREM
-    clients = {pid}
+    clients = {my_pid}
     for _, _, body in chann.consume():
-        new_client = json.loads(body)['pid']
+        new_client = int(json.loads(body)['pid'])
         print(f"Cliente {new_client} fez check-in")
         if new_client not in clients:
             print(f"Cliente {new_cliente} é um cliente novo")
@@ -77,37 +81,61 @@ if __name__ == "__main__":
             chann.basic_publish(
                 exchange='',
                 routing_key="check-in",
-                body=json.dumps({"pid": pid})
+                body=json.dumps({"pid": my_pid})
             )
         print(f"Clientes conhecidos ({len(clientes)}): {clients}")
         if len(clients) == NUM_CLIENTS:
             break
     chann.cancel()
+    exit(0)
 
-    # VOTAÇÃO PARA O LÍDER
+    # VOTO NO LÍDER
     my_vote = list(clients)[randint(0, NUM_CLIENTS-1)]
-    #TODO publicar meu voto
-    votes = {}
-    for method_frame, _, body in chann.consume():
-        voted_client = json.loads(body)['pid']
-        if voted_client in votes:
-            votes[voted_client] += 1
-        else:
-            votes[voted_client] = 1
+    chann.queue_declare(queue="voting")
+    chann.basic_publish(
+        exchange='',
+        routing_key="voting",
+        body=json.dumps({'sender': my_pid, 'vote': my_vote})
+    )
+    print(f"Eu, {my_pid}, votei no {my_vote}")
 
-        if method_frame.delivery_tag == NUM_CLIENTS:
-            break
+    # RESULTADO DA VOTAÇÃO
+    votes = {pid: 0 for pid in clients}
+    counter = 0
+    for _, _, body in chann.consume():
+        body = json.loads(body)
+        sender = int(body['sender'])
+        voted_client = int(body['vote'])
+        if sender not in clients:
+            print((
+                "PANIC!\n"
+                f"Voto de cliente desconhecido ({sender}) recebido!\n"
+                "Ignorando voto"
+            ))
+        else:
+            votes[voted_client] += 1
+            counter += 1
+            if counter == NUM_CLIENTS:
+                break
     chann.cancel()
 
-    print("RESULTADO DA VOTAÇÃO")
+    print("RESULTADO DA VOTAÇÃO:")
     print(votes)
     most_votes = max(votes.values())
-    winner = [pid for pid, n in votes.items() if n == most_votes].sort()[0]
-    print("VENCEDOR")
-    print(winner)
-
-    # GERAÇÃO DO DESAFIO, SE FOR O LÍDER
+    leader = [pid for pid, n in votes.items() if n == most_votes].sort()[0]
+    print(f"VENCEDOR: {leader}")
 
     # RESOLUÇÃO DO DESAFIO
+    chann.queue_declare(queue="challenges")
+    ## GERAÇÃO DO DESAFIO, SE FOR O LÍDER
+    if leader == my_pid:
+        challenge = randint(25, 25)
+        chann.basic_publish(
+            exchange='',
+            routing_key="challenges",
+            body=json.dumps({"challenge": challenge})
+        )
+
+    ## CONSUMO E RESOLUÇÃO DO DESAFIO
 
     # DESAFIO RESOLVIDO

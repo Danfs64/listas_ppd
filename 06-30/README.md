@@ -15,3 +15,8 @@
   * Cada cliente vota aleatoriamente e manda seu voto na fila `voting`
   * O vencedor da votação é o cliente com mais votos, usando o PID como desempate
     * O menor PID vence o desempate
+* Feita a votação para líder, o líder irá gerar um desafio aleatório e mandar na fila `challenge`
+* Os clientes então consumiram o challenge da fila `challenge` e começarão a tentar resolvê-lo
+* O processo de resolução do desafio depende da dificuldade dele
+  * Desafios de dificuldade até 20 são bastante rápidos, então não se usa paralelismo para resolvê-los
+  * Desafios de dificuldade maior do que 20 serão paralelizados
