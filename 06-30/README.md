@@ -1,5 +1,42 @@
 # Lab 05
 
+## Pré-requisitos
+
+* Python 3.9.0+
+  * Testado em Python 3.9.5
+* Pika 1.3.0+
+  * Testado com Pika 1.3.0
+* RabbitMQ
+
+## Como executar
+
+1. Inicialize o RabbitMQ
+    * `sudo service rabbitmq-server start` no Linux
+2. Execute o "Servidor" `server.py` primeiro, que irá apenas para criar as filas/exchanges
+3. Execute os clientes `client.py`, `<NUM_CLIENTS>` vezes
+    * `NUM_CLIENTS` está definido na linha 5 do `client.py`
+
+## Filas
+
+Todas as filas usadas são:
+
+* Geradas por exchanges fanout, ou seja, cada mensagem publicada para a exchange será distribuída para todas as filas registradas nela, já que não usamos routing_keys
+* Recebem um JSON como body. Os campos desse JSON serão especificados para cada fila/exchange
+
+As exchanges usadas são:
+
+* ppd/check-in: Exchange em que os clientes mandam mensagens para mostrar que estão conectados
+  * Campos do body:
+    * `pid`: o ID específico do cliente que está mandando a mensagem
+* ppd/voting: Exchange em que os clientes mandam os seus votos para decidir o líder
+  * Campos do body:
+    * `sender`: o ID do cliente que está votando
+    * `vote`: o ID do cliente que está sendo votado por `sender`
+* ppd/challenges: Exchange em que o líder envia os challenges para todos os clientes
+  * Campos do body:
+    * `sender`: o ID do rementente da mensagem, idealmente o líder
+    * `challenge`: Dificuldade do desafio a ser resolvido pelos clientes
+
 ## Fluxo de funcionamento
 
 ### "Servidor"
