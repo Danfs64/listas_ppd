@@ -99,7 +99,7 @@ def wait_others(queue: str) -> set[int]:
         print(f"Cliente {new_client} fez check-in")
 
         if new_client not in clients:
-            print(f"Cliente {new_cliente} é um cliente novo")
+            print(f"Cliente {new_client} é um cliente novo")
             clients.add(new_client)
             # Reenvia o check-in sempre que detecta um cliente novo
             CHANNEL.basic_publish(
@@ -107,17 +107,17 @@ def wait_others(queue: str) -> set[int]:
                 routing_key='',
                 body=json.dumps({"pid": MY_PID})
             )
-            print(f"Clientes conhecidos ({len(clientes)}): {clients}")
+            print(f"Clientes conhecidos ({len(clients)}): {clients}")
             if len(clients) == NUM_CLIENTS:
                 break
     CHANNEL.cancel()
     return clients
 
 # VOTAR NO LÍDER
-def leader_vote(clients: set) -> None:
+def leader_vote(clients: set, leader_queue: str) -> None:
     my_vote = list(clients)[randint(0, NUM_CLIENTS-1)]
     CHANNEL.basic_publish(
-        exchange='ppd/voting',
+        exchange=leader_queue,
         routing_key='',
         body=json.dumps({'sender': MY_PID, 'vote': my_vote})
     )
@@ -129,6 +129,7 @@ def leader_result(clients: set, queue: str) -> int:
     counter = 0
     for _, _, body in CHANNEL.consume(queue):
         body = json.loads(body)
+        print(f"look at my body: {body}")
         sender = int(body['sender'])
         voted_client = int(body['vote'])
         if sender not in clients:
@@ -220,8 +221,8 @@ if __name__ == "__main__":
 
     check_in()
     clients = wait_others(check_in_queue)
-
-    leader_vote(clients)
+    leader_vote(clients, leader_queue)
+    print("Iremos começar tehee")
     leader = leader_result(clients, leader_queue)
 
     # A partir daqui, é o loop de:
