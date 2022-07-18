@@ -1,10 +1,15 @@
 from dataclasses import dataclass
+from multiprocessing.pool import AsyncResult
 from random import randint
 from hashlib import sha1
+import multiprocessing
+import signal
 from time import sleep
 import json
 import pika
 from multiprocessing import Pool, Process
+from multiprocessing.sharedctypes import Value
+from ctypes import c_int32
 
 NUM_CLIENTS = 2
 NUM_PROCESSES = 6
@@ -55,38 +60,46 @@ def check_seed(seed: int, challenge: int) -> bool:
     return solution_bits == 0
 
 
-def solve_challenge(challenge: int) -> int:
+def solve_challenge(challenge: int, solution_pointer=None) -> int:
     while True:
         seed = randint(0, MAX_SEED)
         if check_seed(seed, challenge):
+            if solution_pointer:
+                solution_pointer.value = seed
             return seed
 
 
 def minerar(challenge: int) -> int:
     # Challenges menores que 20 são mais rápidos que o overhead do paralelismo
+    processes: list[Process] = []
+        
+    def kill_my_children(*args):
+        children = multiprocessing.active_children()
+        for child in children: child.kill()
+
+    signal.signal(signal.SIGTERM, kill_my_children)
     if challenge < 20:
         solution = solve_challenge(challenge)
+        return solution
     else:
-        with Pool(processes=NUM_PROCESSES) as pool:
-            processes = []
-            for _ in range(NUM_PROCESSES):
-                proc = pool.apply_async(solve_challenge, args=(challenge,))
-                processes.append(proc)
+        solution_var = Value(c_int32, -1, lock=False)
+        for _ in range(NUM_PROCESSES):
+            proc = Process(
+                target=solve_challenge, args=(challenge,), 
+                kwargs={'solution_pointer': solution_var}
+                )
+            processes.append(proc)
+            proc.start()
 
-            # processes = [
-            #     pool.apply_async(solve_challenge, args=(challenge,))
-            #     for _ in range(NUM_PROCESSES)
-            # ]
-            
-            solved = False
-            while not solved:
-                sleep(1)
-                for proc in processes:
-                    if proc.ready():
-                        solution = proc.get()
-                        solved = True
-                        break
-    return solution
+        while solution_var.value == -1:
+            # waits for a solution
+            sleep(1)
+        print(solution_var.value)
+        solution = solution_var.value
+        for proc in processes:
+            assert isinstance(proc, Process)
+            proc.terminate()
+        return solution
 
 # FAZER CHECKIN NO BROKER
 def check_in() -> None:
@@ -208,6 +221,7 @@ def process_solutions(challenge_id: int, solution_queue: str, voting_queue: str)
             if voting_result:
                 TRANSACTIONS[cid].seed = solution
                 TRANSACTIONS[cid].winner = sender
+                print(TRANSACTIONS[cid])
                 break
     CHANNEL.cancel()
 # RESULTADO VOTAÇÃO
@@ -244,7 +258,7 @@ if __name__ == "__main__":
     # - Uma resposta é aceita
     # - Volta pro início do loop
     while True:
-        if leader == MY_PID: publish_challenge(len(TRANSACTIONS), 15, 15)
+        if leader == MY_PID: publish_challenge(len(TRANSACTIONS), 21, 22)
 
         # Lê mensagens da fila de challenges até receber uma válida
         for _, _, body in CHANNEL.consume(challenge_queue):
@@ -262,8 +276,6 @@ if __name__ == "__main__":
         # Essa função deve ser executada por um processo/thread próprio
         proc = Process(target=publish_solution, args=(cid, challenge))
         proc.start()
-        # proc = p.apply_async(publish_solution, args=(cid, challenge))
-        #publish_solution(cid, challenge)
         # Você deve parar a thread/processo executando `publish_solution`
         # quando a função abaixo retornar
         process_solutions(cid, solution_queue, voting_queue)
