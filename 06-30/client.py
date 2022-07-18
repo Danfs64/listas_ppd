@@ -4,8 +4,9 @@ from hashlib import sha1
 from time import sleep
 import json
 import pika
+from multiprocessing import Pool, Process
 
-NUM_CLIENTS = 3
+NUM_CLIENTS = 2
 NUM_PROCESSES = 6
 MAX_SEED = 2147483647
 
@@ -29,6 +30,11 @@ CONNECTION = pika.BlockingConnection(
     pika.ConnectionParameters(host="localhost", heartbeat=600)
 )
 CHANNEL = CONNECTION.channel()
+
+VOTING_CONNECTION = pika.BlockingConnection(
+    pika.ConnectionParameters(host="localhost", heartbeat=600)
+)
+VOTING_CHANNEL = VOTING_CONNECTION.channel()
 
 
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
@@ -148,13 +154,14 @@ def leader_result(clients: set, queue: str) -> int:
     print("RESULTADO DA VOTAÇÃO:")
     print(votes)
     most_votes = max(votes.values())
-    leader = [pid for pid, n in votes.items() if n == most_votes].sort()[0]
+    leader = [pid for pid, n in votes.items() if n == most_votes]
+    leader.sort()
+    leader = leader[0]
     print(f"VENCEDOR: {leader}")
     return leader
 
 # GERAÇÃO DE DESAFIO
 def publish_challenge(cid: int, x: int, y: int) -> None:
-    CHANNEL.queue_declare(queue="challenges")
     challenge = randint(x, y)
     CHANNEL.basic_publish(
         exchange='ppd/challenges',
@@ -167,9 +174,15 @@ def publish_challenge(cid: int, x: int, y: int) -> None:
 def publish_solution(cid: int, challenge: int) -> None:
     # Entra em loop infinito tentando resolvr o challenge e mandando soluções
     # Essa função (publish_solution) deve ser parada por um processo/thread a parte
+    localnnection = pika.BlockingConnection(
+    pika.ConnectionParameters(host="localhost", heartbeat=600)
+    )
+    localnnel = localnnection.channel()
+
+    print(f"Vou publicar")
     while True:
         solution = minerar(challenge)
-        CHANNEL.basic_publish(
+        localnnel.basic_publish(
             exchange='ppd/solutions',
             routing_key='',
             body=json.dumps({'sender': MY_PID, 'cid': cid, 'solution': solution})
@@ -177,17 +190,19 @@ def publish_solution(cid: int, challenge: int) -> None:
 
 # PROCESSAR SOLUÇÕES
 def process_solutions(challenge_id: int, solution_queue: str, voting_queue: str) -> None:
+    print(f"Recebi {challenge_id, solution_queue, voting_queue}")
     for _, _, body in CHANNEL.consume(solution_queue):
-        body = json.loads(json)
-        cid = int(json['cid'])
-        sender = int(json['sender'])
-        solution = int(json['solution'])
+        body = json.loads(body)
+        print(f"O pai tá sendo processado: {body}")
+        cid = int(body['cid'])
+        sender = int(body['sender'])
+        solution = int(body['solution'])
 
         # Se é uma tentativa de solução do challenge correto
         if cid == challenge_id:
             solved = check_seed(solution, TRANSACTIONS[cid].challenge)
-            CHANNEL.basic_publish(
-                exchange='ppd/solution_voting',
+            VOTING_CHANNEL.basic_publish(
+                exchange='ppd/voting',
                 routing_key='',
                 body=json.dumps({'solved': solved})
             )
@@ -196,19 +211,20 @@ def process_solutions(challenge_id: int, solution_queue: str, voting_queue: str)
             if voting_result:
                 TRANSACTIONS[cid].seed = solution
                 TRANSACTIONS[cid].winner = sender
-                return
-
+                break
+    CHANNEL.cancel()
 # RESULTADO VOTAÇÃO
 def process_voting(queue: str) -> bool:
     votes = {True: 0, False: 0}
     counter = 0
-    for _, _, body in CHANNEL.consume(queue):
+    for _, _, body in VOTING_CHANNEL.consume(queue):
+        body = json.loads(body)
         solved = bool(body['solved'])
         votes[solved] += 1
         counter += 1
         if counter == NUM_CLIENTS:
             break
-
+    VOTING_CHANNEL.cancel()
     return votes[True] > votes[False]
 
 if __name__ == "__main__":
@@ -217,11 +233,11 @@ if __name__ == "__main__":
     leader_queue = set_exchange(CHANNEL, 'ppd/leader', 'fanout')
     challenge_queue = set_exchange(CHANNEL, 'ppd/challenges', 'fanout')
     solution_queue = set_exchange(CHANNEL, 'ppd/solutions', 'fanout')
-    voting_queue = set_exchange(CHANNEL, 'ppd/voting', 'fanout')
+    voting_queue = set_exchange(VOTING_CHANNEL, 'ppd/voting', 'fanout')
 
     check_in()
     clients = wait_others(check_in_queue)
-    leader_vote(clients, leader_queue)
+    leader_vote(clients, 'ppd/leader')
     print("Iremos começar tehee")
     leader = leader_result(clients, leader_queue)
 
@@ -231,7 +247,7 @@ if __name__ == "__main__":
     # - Uma resposta é aceita
     # - Volta pro início do loop
     while True:
-        if leader == MY_PID: publish_challenge(len(TRANSACTIONS), 40, 40)
+        if leader == MY_PID: publish_challenge(len(TRANSACTIONS), 15, 15)
 
         # Lê mensagens da fila de challenges até receber uma válida
         for _, _, body in CHANNEL.consume(challenge_queue):
@@ -239,14 +255,21 @@ if __name__ == "__main__":
             cid = int(body['cid'])
             sender = int(body['sender'])
             challenge = int(body['challenge'])
+            print(f"Resolvendo: {body}")
             if cid == len(TRANSACTIONS) and sender == leader:
                 break
-
+        CHANNEL.cancel()
         # Registra a transação a ser resolvida
         TRANSACTIONS[cid] = Transaction(challenge, None, -1)
 
         # Essa função deve ser executada por um processo/thread próprio
-        publish_solution(cid, challenge)
+        proc = Process(target=publish_solution, args=(cid, challenge))
+        proc.start()
+        # proc = p.apply_async(publish_solution, args=(cid, challenge))
+        #publish_solution(cid, challenge)
         # Você deve parar a thread/processo executando `publish_solution`
         # quando a função abaixo retornar
+        print("eu ainda tenho controle da minha vida")
         process_solutions(cid, solution_queue, voting_queue)
+        proc.kill()        
+        print("a diversão acabou")
