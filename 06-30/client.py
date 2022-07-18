@@ -11,7 +11,7 @@ from multiprocessing import Pool, Process
 from multiprocessing.sharedctypes import Value
 from ctypes import c_int32
 
-NUM_CLIENTS = 2
+NUM_CLIENTS = 10
 NUM_PROCESSES = 6
 MAX_SEED = 2147483647
 

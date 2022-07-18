@@ -12,9 +12,8 @@
 
 1. Inicialize o RabbitMQ
     * `sudo service rabbitmq-server start` no Linux
-2. Execute o "Servidor" `server.py` primeiro, que irá apenas para criar as filas/exchanges
-3. Execute os clientes `client.py`, `<NUM_CLIENTS>` vezes
-    * `NUM_CLIENTS` está definido na linha 5 do `client.py`
+2. Execute os clientes `client.py`, `<NUM_CLIENTS>` vezes
+    * `NUM_CLIENTS` está definido na linha 14 do `client.py`
 
 ## Filas
 
@@ -53,11 +52,7 @@ P.S.: Na exchange de votação, como estamos supondo que:
 
 ## Fluxo de funcionamento
 
-### "Servidor"
-
-* Somente inicializa as filas que serão usadas
-
-### Cliente
+Cada cliente:
 
 * Faz o próprio check-in, mandando na fila `check-in` o seu PID (Personal ID)
 * Fica ouvindo a fila `check-in` até reconhecer que todos os outros membros entraram
@@ -66,12 +61,12 @@ P.S.: Na exchange de votação, como estamos supondo que:
   * Cada cliente vota aleatoriamente e manda seu voto na fila `leader`
   * O vencedor da votação é o cliente com mais votos, usando o PID como desempate
     * O menor PID vence o desempate
-* Feita a votação para líder, o líder irá gerar um desafio aleatório e mandar na fila `challenge`
-* Consome o challenge da fila `challenge` e começa a tentar resolvê-lo em uma thread/processo separado
-  * A thread/processo separado manda para a fila `solution` sempre que encontra uma solução
+* Se for o líder, gera um desafio aleatório e manda na fila `challenge`
+* Consome o challenge da fila `challenge` e começa a tentar resolvê-lo em um processo separado
+  * O processo separado manda para a fila `solution` sempre que encontra uma solução
 * O processo de resolução do desafio depende da dificuldade:
   * Desafios de dificuldade até 20 são bastante rápidos, então não se usa paralelismo para resolvê-los
   * Desafios de dificuldade maior do que 20 serão paralelizados
 * Consome da fila de `solution` para checar quando um desafio foi resolvido
 * Para cada resolução lida de `solution`, o cliente checa a solução e manda seu voto para a fila de `voting`
-* Se a votação passa, o processo/thread de resolução é parado, a tabela interna de transações é atualizada, e volta para a consumir challenges para serem resolvidos
+* Se a votação passa, o processo de resolução é parado, a tabela interna de transações é atualizada, e volta a consumir challenges (e gerar, se for o líder) para serem resolvidos
