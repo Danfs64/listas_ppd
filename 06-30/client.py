@@ -135,7 +135,6 @@ def leader_result(clients: set, queue: str) -> int:
     counter = 0
     for _, _, body in CHANNEL.consume(queue):
         body = json.loads(body)
-        print(f"look at my body: {body}")
         sender = int(body['sender'])
         voted_client = int(body['vote'])
         if sender not in clients:
@@ -157,7 +156,7 @@ def leader_result(clients: set, queue: str) -> int:
     leader = [pid for pid, n in votes.items() if n == most_votes]
     leader.sort()
     leader = leader[0]
-    print(f"VENCEDOR: {leader}")
+    print(f"VENCEDOR DA VOTAÇÃO: {leader}")
     return leader
 
 # GERAÇÃO DE DESAFIO
@@ -179,7 +178,6 @@ def publish_solution(cid: int, challenge: int) -> None:
     )
     localnnel = localnnection.channel()
 
-    print(f"Vou publicar")
     while True:
         solution = minerar(challenge)
         localnnel.basic_publish(
@@ -190,16 +188,15 @@ def publish_solution(cid: int, challenge: int) -> None:
 
 # PROCESSAR SOLUÇÕES
 def process_solutions(challenge_id: int, solution_queue: str, voting_queue: str) -> None:
-    print(f"Recebi {challenge_id, solution_queue, voting_queue}")
     for _, _, body in CHANNEL.consume(solution_queue):
         body = json.loads(body)
-        print(f"O pai tá sendo processado: {body}")
         cid = int(body['cid'])
         sender = int(body['sender'])
         solution = int(body['solution'])
 
         # Se é uma tentativa de solução do challenge correto
         if cid == challenge_id:
+            print(f"A solução: {body} será votada")
             solved = check_seed(solution, TRANSACTIONS[cid].challenge)
             VOTING_CHANNEL.basic_publish(
                 exchange='ppd/voting',
@@ -269,7 +266,5 @@ if __name__ == "__main__":
         #publish_solution(cid, challenge)
         # Você deve parar a thread/processo executando `publish_solution`
         # quando a função abaixo retornar
-        print("eu ainda tenho controle da minha vida")
         process_solutions(cid, solution_queue, voting_queue)
         proc.kill()        
-        print("a diversão acabou")
