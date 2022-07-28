@@ -1,0 +1,2 @@
+pika<2.0.0
+pycryptodome<4.0.0
