@@ -1,12 +1,13 @@
-import json
-import pika
 from dataclasses import dataclass
 from random import randint
-from settings import HOSTNAME
+from pathlib import Path
 from enum import Enum
+import json
 
 from Crypto.PublicKey import RSA
+import pika
 
+from settings import HOSTNAME
 
 class Queue(Enum):
     INIT = 'ppd/init'
@@ -37,6 +38,8 @@ MANAGING_CONN  = pika.BlockingConnection(
 FOUR_CHAN = MANAGING_CONN.channel()
 MANAGING_CHANN = FOUR_CHAN
 
+assert (Path('.')/'public_ket.txt').is_file(),\
+    "Arquivo de chave pública não encontrado"
 PUB_KEY = RSA.importKey(open("public_key.txt").read())
 
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
@@ -47,13 +50,16 @@ def set_exchange(chann, exchange: str, exchange_type: str) -> str:
     chann.queue_bind(exchange=exchange, queue=queue_name)
     return queue_name
 
+def publish(exchange: Queue, body: dict[str, Any]) -> None:
+    MANAGING_CHANN.publish(
+        exchange=exchange,
+        routing_key='',
+        body=json.dumps(body)
+    )
+
 def publish_ID() -> None:
     init_msg = {"NodeId": NODEID}
-    MANAGING_CHANN.publish(
-        exchange=Queue.INIT,
-        routing_key='',
-        body=json.dumps(init_msg)
-    )
+    publish(Queue.INIT, init_msg)
 
 def get_IDs(queue: str, n: int) -> set[int]:
     clients = {NODEID}
@@ -78,11 +84,7 @@ def publish_key() -> None:
         "NodeID": NODEID,
         "PubKey": PUB_KEY
     }
-    MANAGING_CHANN.publish(
-        exchange=Queue.KEY,
-        routing_key='',
-        body=json.dumps(msg)
-    )
+    publish(Queue.KEY, msg)
 
 def get_keys(queue: str, clients: set[int]) -> dict[int, str]:
     public_keys = {NODEID: PUB_KEY}
@@ -95,16 +97,18 @@ def get_keys(queue: str, clients: set[int]) -> dict[int, str]:
         if new_client in clients and new_client not in public_keys.keys():
             print(f"A chave do cliente {new_client} é uma chave nova")
             public_keys[new_client] = new_key
-            # Reenvia o check-in sempre que detecta um cliente novo
+            # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
             publish_key()
 
-            # print(f"Clientes conhecidos ({len(clients)}): {clients}")
-            if len(public_keys) == n:
+            if len(public_keys) == len(clients):
                 break
     MANAGING_CHANN.cancel()
     return public_keys
 
 if __name__=="__main__":
+    assert (Path('.')/'private_key.pem').is_file(),\
+        "Arquivo de chave privada não encontrado"
+
     n = input("Insira o número de participantes: ")
 
     init_queue = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
