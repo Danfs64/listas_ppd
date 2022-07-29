@@ -11,8 +11,9 @@ from settings import HOSTNAME
 
 class Queue(Enum):
     INIT = 'ppd/init'
-    CHAL = 'ppd/chal'
     KEY  = 'ppd/pubkey'
+    ELEC = 'ppd/election'
+    CHAL = 'ppd/chal'
 
 @dataclass
 class Transaction:
@@ -105,6 +106,41 @@ def get_keys(queue: str, clients: set[int]) -> dict[int, str]:
     MANAGING_CHANN.cancel()
     return public_keys
 
+def vote_leader() -> None:
+    # TODO garantir que a ordem dos campos está correta
+    election_number = randint(0, (1 << 32)-1)
+    election_msg = {
+        "NodeID": NODEID,
+        "ElectionNumber": election_number
+    }
+
+    # TODO assinar a mensagem
+
+# TODO revisar essa func
+def get_leader(queue: str, pub_keys: dict[int, str]) -> int:
+    election_numbers = dict()
+    for _, _, body in MANAGING_CHANN.consume(queue):
+        body = json.loads(body)
+        node_id = int(body['NodeID'])
+        election_number = int(body['ElectionNumber'])
+        signature = body['Sign']
+
+        if node_id in pub_keys.keys():
+            print(f"Recebi um voto do {node_id}")
+            if assinatura_valida():
+                print(f"Voto do {node_id} é um voto válido")
+                election_numbers[node_id] = election_number
+                # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
+                publish_key()
+
+            if len(public_keys) == len(clients):
+                break
+    MANAGING_CHANN.cancel()
+
+    # TODO define o vencedor
+
+    return None
+
 if __name__=="__main__":
     assert (Path('.')/'private_key.pem').is_file(),\
         "Arquivo de chave privada não encontrado"
@@ -113,9 +149,16 @@ if __name__=="__main__":
 
     init_queue = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
     key_queue = set_exchange(MANAGING_CHANN, Queue.KEY, "fanout")
+    election_queue = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
 
+    # CHECK-IN
     publish_ID()
     participants = get_IDs(init_queue, n)
 
+    # KEY EXCHANGE
     publish_key()
     public_keys = get_keys(key_queue, participants)
+
+    # VOTING
+    vote_leader()
+    leader = get_leader(election_queue, public_keys)
