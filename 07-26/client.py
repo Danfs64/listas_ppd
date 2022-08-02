@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from random import randint
 from pathlib import Path
+from typing import Union
 from enum import Enum
 import json
 
@@ -13,7 +14,7 @@ class Queue(Enum):
     INIT = 'ppd/init'
     KEY  = 'ppd/pubkey'
     ELEC = 'ppd/election'
-    CHAL = 'ppd/chal'
+    CHAL = 'ppd/challenge'
 
 @dataclass
 class Transaction:
@@ -43,6 +44,10 @@ assert (Path('.')/'public_ket.txt').is_file(),\
     "Arquivo de chave pública não encontrado"
 PUB_KEY = RSA.importKey(open("public_key.txt").read())
 
+assert (Path('.')/'private_key.pem').is_file(),\
+    "Arquivo de chave privada não encontrado"
+PRIV_KEY = RSA.importKey(open("private_key.pem").read())
+
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
     chann.exchange_declare(exchange=exchange, exchange_type=exchange_type)
     queue = chann.queue_declare(queue='', exclusive=True)
@@ -51,7 +56,7 @@ def set_exchange(chann, exchange: str, exchange_type: str) -> str:
     chann.queue_bind(exchange=exchange, queue=queue_name)
     return queue_name
 
-def publish(exchange: Queue, body: dict[str, Any]) -> None:
+def publish(exchange: Queue, body: dict[str, Union[str, int]]) -> None:
     MANAGING_CHANN.publish(
         exchange=exchange,
         routing_key='',
@@ -114,7 +119,8 @@ def vote_leader() -> None:
         "ElectionNumber": election_number
     }
 
-    # TODO assinar a mensagem
+    # TODO assinar e enviar a mensagem
+    pass
 
 # TODO revisar essa func
 def get_leader(queue: str, pub_keys: dict[int, str]) -> int:
@@ -133,18 +139,31 @@ def get_leader(queue: str, pub_keys: dict[int, str]) -> int:
                 # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
                 publish_key()
 
-            if len(public_keys) == len(clients):
+            if len(pub_keys) == len(election_numbers):
                 break
     MANAGING_CHANN.cancel()
 
-    # TODO define o vencedor
+    # Define o maior election number
+    maior_voto = max(election_numbers.values())
+    # O vencedor é quem votou com o maior election number
+    leader = [
+        n_id
+        for n_id, e_number in election_numbers.items()
+        if e_number == maior_voto
+    ]
+    # O desempate é pegar o maior nodeID dos que votaram o maior election number
+    return max(leader)
 
-    return None
+def publish_challenge() -> None:
+    msg = {
+        "NodeID": NODEID,
+        "Challenge": randint(1, 10),
+    }
+
+    # TODO assinar e enviar a mensagem
+    pass
 
 if __name__=="__main__":
-    assert (Path('.')/'private_key.pem').is_file(),\
-        "Arquivo de chave privada não encontrado"
-
     n = input("Insira o número de participantes: ")
 
     init_queue = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
@@ -162,3 +181,9 @@ if __name__=="__main__":
     # VOTING
     vote_leader()
     leader = get_leader(election_queue, public_keys)
+    print(f"O nó {leader} venceu a eleição")
+
+    # ENDLESS LOOP
+    while True:
+        if NODEID == leader:
+            publish_challenge()
