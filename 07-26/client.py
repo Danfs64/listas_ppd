@@ -31,7 +31,7 @@ class Transaction:
 
 TRANSACTIONS: dict[int, Transaction] = {}
 TRANSACTIONS[0] = None
-
+PUB_KEY_TABLE = dict()
 NODEID = randint(0, (1<<32)-1)
 
 MANAGING_CONN  = pika.BlockingConnection(
@@ -163,6 +163,19 @@ def publish_challenge() -> None:
     # TODO assinar e enviar a mensagem
     pass
 
+def get_challenge(queue: str) -> int:
+    for _, _, body in MANAGING_CHANN.consume(queue):
+        body = json.loads(body)
+        # cid = int(body['cid'])
+        sender = int(body['NodeID'])
+        challenge = int(body['Challenge'])
+        signature = body['Sign']
+        if sender == leader and assinatura_valida():
+            print(f"Resolvendo dificuldade {challenge}")
+            break
+    MANAGING_CHANN.cancel()
+    return challenge
+
 if __name__=="__main__":
     n = input("Insira o número de participantes: ")
 
@@ -185,5 +198,13 @@ if __name__=="__main__":
 
     # ENDLESS LOOP
     while True:
+        # PUBLISHING CHALLENGE IF LEADER
         if NODEID == leader:
             publish_challenge()
+
+        challenge = get_challenge(Queue.CHAL)
+
+        # TODO Invocar um (ou vários) processos paralelos pra resolver o problema
+        solve_challenge(challenge)
+
+        # TODO Ficar de olho na votação
