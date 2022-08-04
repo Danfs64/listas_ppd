@@ -15,6 +15,7 @@ class Queue(Enum):
     KEY  = 'ppd/pubkey'
     ELEC = 'ppd/election'
     CHAL = 'ppd/challenge'
+    SOL  = 'ppd/solution'
 
 @dataclass
 class Transaction:
@@ -176,12 +177,35 @@ def get_challenge(queue: str) -> int:
     MANAGING_CHANN.cancel()
     return challenge
 
+# TODO checar essa função
+def vote_solutions(queue: str) -> None:
+    for _, _, body in MANAGING_CHANN.consume(queue):
+        body = json.loads(body)
+        # cid = int(body['cid'])
+        seed = body['seed']
+        sender = int(body['NodeID'])
+        signature = body['Sign']
+        if assinatura_valida():
+            print(f"Votando na solução {seed} mandada por {sender}")
+            if check_solution(seed):
+                send_vote(True)
+            else:
+                send_vote(False)
+            
+            # TODO Checar resultado da votação
+
+            if votacao_passou():
+                break
+    MANAGING_CHANN.cancel()
+
 if __name__=="__main__":
     n = input("Insira o número de participantes: ")
 
-    init_queue = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
-    key_queue = set_exchange(MANAGING_CHANN, Queue.KEY, "fanout")
-    election_queue = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
+    init_queue      = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
+    key_queue       = set_exchange(MANAGING_CHANN, Queue.KEY,  "fanout")
+    election_queue  = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
+    challenge_queue = set_exchange(MANAGING_CHANN, Queue.CHAL, "fanout")
+    solution_queue  = set_exchange(MANAGING_CHANN, Queue.SOL,  "fanout")
 
     # CHECK-IN
     publish_ID()
@@ -202,9 +226,10 @@ if __name__=="__main__":
         if NODEID == leader:
             publish_challenge()
 
-        challenge = get_challenge(Queue.CHAL)
+        challenge = get_challenge(challenge_queue)
 
         # TODO Invocar um (ou vários) processos paralelos pra resolver o problema
         solve_challenge(challenge)
 
         # TODO Ficar de olho na votação
+        vote_solutions(solution_queue)
