@@ -16,6 +16,7 @@ class Queue(Enum):
     ELEC = 'ppd/election'
     CHAL = 'ppd/challenge'
     SOL  = 'ppd/solution'
+    VOTE = 'ppd/voting'
 
 @dataclass
 class Transaction:
@@ -57,15 +58,15 @@ def set_exchange(chann, exchange: str, exchange_type: str) -> str:
     chann.queue_bind(exchange=exchange, queue=queue_name)
     return queue_name
 
-def publish(exchange: Queue, body: dict[str, Union[str, int]]) -> None:
+def publish(exchange: Queue, body: str) -> None:
     MANAGING_CHANN.publish(
         exchange=exchange,
         routing_key='',
-        body=json.dumps(body)
+        body=body
     )
 
 def publish_ID() -> None:
-    init_msg = {"NodeId": NODEID}
+    init_msg = json.dumps({"NodeId": NODEID})
     publish(Queue.INIT, init_msg)
 
 def get_IDs(queue: str, n: int) -> set[int]:
@@ -87,18 +88,18 @@ def get_IDs(queue: str, n: int) -> set[int]:
     return clients
 
 def publish_key() -> None:
-    msg = {
+    msg = json.dumps({
         "NodeID": NODEID,
         "PubKey": PUB_KEY
-    }
+    })
     publish(Queue.KEY, msg)
 
 def get_keys(queue: str, clients: set[int]) -> dict[int, str]:
     public_keys = {NODEID: PUB_KEY}
     for _, _, body in MANAGING_CHANN.consume(queue):
         body = json.loads(body)
-        new_client = int(body['NodeID'])
         new_key = body['PubKey']
+        new_client = int(body['NodeID'])
         print(f"Cliente {new_client} mandou uma chave")
 
         if new_client in clients and new_client not in public_keys.keys():
@@ -115,10 +116,10 @@ def get_keys(queue: str, clients: set[int]) -> dict[int, str]:
 def vote_leader() -> None:
     # TODO garantir que a ordem dos campos está correta
     election_number = randint(0, (1 << 32)-1)
-    election_msg = {
+    election_msg = json.dumps({
         "NodeID": NODEID,
         "ElectionNumber": election_number
-    }
+    })
 
     # TODO assinar e enviar a mensagem
     pass
@@ -156,10 +157,10 @@ def get_leader(queue: str, pub_keys: dict[int, str]) -> int:
     return max(leader)
 
 def publish_challenge() -> None:
-    msg = {
+    msg = json.dumps({
         "NodeID": NODEID,
         "Challenge": randint(1, 10),
-    }
+    })
 
     # TODO assinar e enviar a mensagem
     pass
@@ -206,14 +207,17 @@ if __name__=="__main__":
     election_queue  = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
     challenge_queue = set_exchange(MANAGING_CHANN, Queue.CHAL, "fanout")
     solution_queue  = set_exchange(MANAGING_CHANN, Queue.SOL,  "fanout")
+    voting_queue    = set_exchange(MANAGING_CHANN, Queue.VOTE, "fanout")
 
     # CHECK-IN
     publish_ID()
     participants = get_IDs(init_queue, n)
+    print(f"Nós que participarão: {participants}")
 
     # KEY EXCHANGE
     publish_key()
     public_keys = get_keys(key_queue, participants)
+    print("Chaves lidas:", *public_keys.items(), sep='\n')
 
     # VOTING
     vote_leader()
