@@ -1,1 +1,1 @@
-from .config import HOSTNAME
+from .config import *

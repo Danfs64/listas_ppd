@@ -1,54 +1,37 @@
-from dataclasses import dataclass
-from random import randint
-from pathlib import Path
-from typing import Union
-from enum import Enum
+from random import randint, choices
 import json
+from hashlib import sha1
 
-from Crypto.PublicKey import RSA
 import pika
+from Crypto.Hash import SHA256
+from Crypto.Signature import PKCS1_v1_5
 
-from settings import HOSTNAME
+from settings import *
+from domain import Queue, Transaction
+from assert_doente_do_dan import get_keys
 
-class Queue(Enum):
-    INIT = 'ppd/init'
-    KEY  = 'ppd/pubkey'
-    ELEC = 'ppd/election'
-    CHAL = 'ppd/challenge'
-    SOL  = 'ppd/solution'
-    VOTE = 'ppd/voting'
-
-@dataclass
-class Transaction:
-    challenge: int
-    seed: str
-    winner: int
-
-    def __str__(self) -> str:
-        return (
-            f"Challenge: {self.challenge} | "
-            f"Seed vencedora: {self.seed if self.seed else 'Nenhuma'} | "
-            f"Cliente vencedor: {self.winner if (self.winner != -1) else 'Nenhum'}"
-        )
 
 TRANSACTIONS: dict[int, Transaction] = {}
 TRANSACTIONS[0] = None
-PUB_KEY_TABLE = dict()
-NODEID = randint(0, (1<<32)-1)
 
-MANAGING_CONN  = pika.BlockingConnection(
-    host=HOSTNAME
-)
-FOUR_CHAN = MANAGING_CONN.channel()
-MANAGING_CHANN = FOUR_CHAN
+PUB_KEY, PRIV_KEY = get_keys()
+SIGNER = PKCS1_v1_5.new(PRIV_KEY)
+PUB_KEY_TABLE: dict[int, str] = {NODEID: PUB_KEY}
 
-assert (Path('.')/'public_ket.txt').is_file(),\
-    "Arquivo de chave pública não encontrado"
-PUB_KEY = RSA.importKey(open("public_key.txt").read())
+def check_seed(seed: str, challenge: int) -> bool:
+    byte_seed = seed.encode()
+    sha1_bytes = sha1(byte_seed).hexdigest()
+    target_bits = challenge
+    solution_bits = int(sha1_bytes, 16) >> (160-target_bits)
 
-assert (Path('.')/'private_key.pem').is_file(),\
-    "Arquivo de chave privada não encontrado"
-PRIV_KEY = RSA.importKey(open("private_key.pem").read())
+    return solution_bits == 0
+
+def solve_challenge(challenge: int) -> int:
+    while True:
+        seed = ''.join(choices(SEED_ALPHABET, 15))
+        if check_seed(seed, challenge):
+            # TODO Talvez ao invês de retornar, essa func pode só mandar pra fila direto
+            return seed
 
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
     chann.exchange_declare(exchange=exchange, exchange_type=exchange_type)
@@ -64,6 +47,11 @@ def publish(exchange: Queue, body: str) -> None:
         routing_key='',
         body=body
     )
+
+def sign_message(msg: str) -> str:
+    msg_digest = SHA256.new(msg.encode())
+    signature = SIGNER.sign(msg_digest)
+
 
 def publish_ID() -> None:
     init_msg = json.dumps({"NodeId": NODEID})
