@@ -13,3 +13,5 @@ FOUR_CHAN = MANAGING_CONN.channel()
 MANAGING_CHANN = FOUR_CHAN
 
 SEED_ALPHABET = ascii_letters+digits+punctuation
+
+ENCONDING = 'utf-8'

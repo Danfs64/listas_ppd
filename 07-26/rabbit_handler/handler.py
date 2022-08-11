@@ -22,11 +22,10 @@ blocking = type(MANAGING_CHANN)
 
 def get(get_func: Callable[[Any], (bool, Collection | int)], queue, args: list, collection=None):
     body_gen = MANAGING_CHANN.consume(queue)
-   
-    _, _, body = body_gen.__next__()
+
     loop_again = True
     while loop_again:
+        _, _, body = next(body_gen)
         loop_again, collection = get_func(body, collection, *args)
-        _, _, body = body_gen.__next__()
     MANAGING_CHANN.cancel()
     return collection
