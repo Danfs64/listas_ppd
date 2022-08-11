@@ -52,28 +52,37 @@ def sign_message(msg: str) -> str:
     msg_digest = SHA256.new(msg.encode())
     signature = SIGNER.sign(msg_digest)
 
+def check_signature(msg: dict, signature: str) -> None:
+    sender = int(msg["NodeID"])
+    sender_key = PUB_KEY_TABLE[sender]
+    verifier = PKCS1_v1_5.new(sender_key)
+
+    msg_json = json.dumps(msg)
+    msg_digest = SHA256.new(msg_json.encode())
+
+    sig_bytes = bytes.fromhex(signature)
+
+    return verifier.verify(msg_digest, sig_bytes)
 
 def publish_ID() -> None:
     init_msg = json.dumps({"NodeId": NODEID})
     publish(Queue.INIT, init_msg)
 
-def get_IDs(queue: str, n: int) -> set[int]:
-    clients = {NODEID}
-    for _, _, body in MANAGING_CHANN.consume(queue):
-        new_client = int(json.loads(body)['NodeID'])
-        print(f"Cliente {new_client} fez check-in")
+def get_IDs(body, clients, n: int) -> set[int]:
+    # clients = {NODEID}
+    new_client = int(json.loads(body)['NodeID'])
+    print(f"Cliente {new_client} fez check-in")
 
-        if new_client not in clients:
-            print(f"Cliente {new_client} é um cliente novo")
-            clients.add(new_client)
-            # Reenvia o check-in sempre que detecta um cliente novo
-            publish_ID()
+    if new_client not in clients:
+        print(f"Cliente {new_client} é um cliente novo")
+        clients.add(new_client)
+        # Reenvia o check-in sempre que detecta um cliente novo
+        publish_ID()
 
-            print(f"Clientes conhecidos ({len(clients)}): {clients}")
-            if len(clients) == n:
-                break
-    MANAGING_CHANN.cancel()
-    return clients
+        print(f"Clientes conhecidos ({len(clients)}): {clients}")
+        if len(clients) == n:
+            False, clients
+    return True, clients
 
 def publish_key() -> None:
     msg = json.dumps({
@@ -82,24 +91,23 @@ def publish_key() -> None:
     })
     publish(Queue.KEY, msg)
 
-def get_keys(queue: str, clients: set[int]) -> dict[int, str]:
-    public_keys = {NODEID: PUB_KEY}
-    for _, _, body in MANAGING_CHANN.consume(queue):
-        body = json.loads(body)
-        new_key = body['PubKey']
-        new_client = int(body['NodeID'])
-        print(f"Cliente {new_client} mandou uma chave")
+def get_keys(body, public_keys: dict[int, str], clients: set[int]) -> dict[int, str]:
+    # public_keys = {NODEID: PUB_KEY}
 
-        if new_client in clients and new_client not in public_keys.keys():
-            print(f"A chave do cliente {new_client} é uma chave nova")
-            public_keys[new_client] = new_key
-            # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
-            publish_key()
+    body = json.loads(body)
+    new_key = body['PubKey']
+    new_client = int(body['NodeID'])
+    print(f"Cliente {new_client} mandou uma chave")
 
-            if len(public_keys) == len(clients):
-                break
-    MANAGING_CHANN.cancel()
-    return public_keys
+    if new_client in clients and new_client not in public_keys.keys():
+        print(f"A chave do cliente {new_client} é uma chave nova")
+        public_keys[new_client] = new_key
+        # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
+        publish_key()
+
+        if len(public_keys) == len(clients):
+            return False, public_keys
+    return True, public_keys
 
 def vote_leader() -> None:
     # TODO garantir que a ordem dos campos está correta
@@ -113,58 +121,58 @@ def vote_leader() -> None:
     pass
 
 # TODO revisar essa func
-def get_leader(queue: str, pub_keys: dict[int, str]) -> int:
+def get_leader(body: str, pub_keys: dict[int, str]) -> int:
     election_numbers = dict()
-    for _, _, body in MANAGING_CHANN.consume(queue):
-        body = json.loads(body)
-        node_id = int(body['NodeID'])
-        election_number = int(body['ElectionNumber'])
-        signature = body['Sign']
+    body: dict = json.loads(body)
+    node_id = int(body['NodeID'])
+    election_number = int(body['ElectionNumber'])
+    signature = body.pop('Sign')
+    
 
-        if node_id in pub_keys.keys():
-            print(f"Recebi um voto do {node_id}")
-            if assinatura_valida():
-                print(f"Voto do {node_id} é um voto válido")
-                election_numbers[node_id] = election_number
-                # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
-                publish_key()
+    if node_id in pub_keys.keys():
+        print(f"Recebi um voto do {node_id}")
+        if assinatura_valida(body, signature):
+            print(f"Voto do {node_id} é um voto válido")
+            election_numbers[node_id] = election_number
+            # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
+            # vote_leader() # Mas não pode ser um voto diferente. Gerar voto fora da vote_leader?
 
-            if len(pub_keys) == len(election_numbers):
-                break
-    MANAGING_CHANN.cancel()
+        if len(pub_keys) == len(election_numbers):
+            # Define o maior election number
+            maior_voto = max(election_numbers.values())
+            # O vencedor é quem votou com o maior election number
+            leader = [
+                n_id
+                for n_id, e_number in election_numbers.items()
+                if e_number == maior_voto
+            ]
+            # O desempate é pegar o maior nodeID dos que votaram o maior election number
+            return False, max(leader)
+    return True, None
 
-    # Define o maior election number
-    maior_voto = max(election_numbers.values())
-    # O vencedor é quem votou com o maior election number
-    leader = [
-        n_id
-        for n_id, e_number in election_numbers.items()
-        if e_number == maior_voto
-    ]
-    # O desempate é pegar o maior nodeID dos que votaram o maior election number
-    return max(leader)
 
-def publish_challenge() -> None:
+
+def publish_challenge(tid: int) -> None:
     msg = json.dumps({
         "NodeID": NODEID,
+        "TransactionNumber": tid,
         "Challenge": randint(1, 10),
     })
 
     # TODO assinar e enviar a mensagem
     pass
 
-def get_challenge(queue: str) -> int:
-    for _, _, body in MANAGING_CHANN.consume(queue):
-        body = json.loads(body)
-        # cid = int(body['cid'])
-        sender = int(body['NodeID'])
-        challenge = int(body['Challenge'])
-        signature = body['Sign']
-        if sender == leader and assinatura_valida():
-            print(f"Resolvendo dificuldade {challenge}")
-            break
-    MANAGING_CHANN.cancel()
-    return challenge
+def get_challenge(body) -> int:
+    body = json.loads(body)
+    # cid = int(body['cid'])
+    sender = int(body['NodeID'])
+    challenge = int(body['Challenge'])
+    signature = body.pop('Sign')
+
+    if sender == leader and assinatura_valida(body, signature):
+        print(f"Resolvendo dificuldade {challenge}")
+        False, challenge
+    True, None
 
 # TODO checar essa função
 def vote_solutions(queue: str) -> None:
