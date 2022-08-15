@@ -11,5 +11,5 @@ with open("private_key.pem", "r") as src:
 
 public_key = private_key.publickey()
 
-with open('public_key.txt', 'w') as out:
-    out.write(public_key.exportKey().decode('utf-8'))
+with open("public_key.txt", "w") as out:
+    out.write(public_key.exportKey().decode("utf-8"))

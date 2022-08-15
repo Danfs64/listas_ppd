@@ -21,42 +21,44 @@ PUB_KEY, PRIV_KEY = get_keys()
 SIGNER = PKCS1_v1_5.new(PRIV_KEY)
 PUB_KEY_TABLE: dict[int, str] = {NODEID: PUB_KEY}
 
+
 def check_seed(seed: str, challenge: int) -> bool:
     byte_seed = seed.encode(ENCONDING)
     sha1_bytes = sha1(byte_seed).hexdigest()
     target_bits = challenge
-    solution_bits = int(sha1_bytes, 16) >> (160-target_bits)
+    solution_bits = int(sha1_bytes, 16) >> (160 - target_bits)
 
     return solution_bits == 0
 
+
 def solve_challenge(challenge: int) -> int:
     while True:
-        seed = ''.join(choices(SEED_ALPHABET, 15))
+        seed = "".join(choices(SEED_ALPHABET, 15))
         if check_seed(seed, challenge):
             # TODO Talvez ao invês de retornar, essa func pode só mandar pra fila direto
             return seed
 
+
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
     chann.exchange_declare(exchange=exchange, exchange_type=exchange_type)
-    queue = chann.queue_declare(queue='', exclusive=True)
+    queue = chann.queue_declare(queue="", exclusive=True)
 
     queue_name = queue.method.queue
     chann.queue_bind(exchange=exchange, queue=queue_name)
     return queue_name
 
+
 def publish(exchange: Queue, body: str) -> None:
-    MANAGING_CHANN.publish(
-        exchange=exchange,
-        routing_key='',
-        body=body
-    )
+    MANAGING_CHANN.publish(exchange=exchange, routing_key="", body=body)
+
 
 def sign_message(msg: dict) -> str:
     msg_json = json.dumps(msg)
     msg_digest = SHA256.new(msg_json.encode(ENCONDING))
     signature = SIGNER.sign(msg_digest)
-    msg.update({'Sign': signature})
+    msg.update({"Sign": signature})
     return json.dumps(msg)
+
 
 def check_signature(msg: dict, signature: str) -> None:
     sender = int(msg["NodeID"])
@@ -70,13 +72,15 @@ def check_signature(msg: dict, signature: str) -> None:
 
     return verifier.verify(msg_digest, sig_bytes)
 
+
 def publish_ID() -> None:
     init_msg = json.dumps({"NodeId": NODEID})
     publish(Queue.INIT, init_msg)
 
+
 def get_IDs(body, clients, n: int) -> set[int]:
     # clients = {NODEID}
-    new_client = int(json.loads(body)['NodeID'])
+    new_client = int(json.loads(body)["NodeID"])
     print(f"Cliente {new_client} fez check-in")
 
     if new_client not in clients:
@@ -90,19 +94,18 @@ def get_IDs(body, clients, n: int) -> set[int]:
             False, clients
     return True, clients
 
+
 def publish_key() -> None:
-    msg = json.dumps({
-        "NodeID": NODEID,
-        "PubKey": PUB_KEY
-    })
+    msg = json.dumps({"NodeID": NODEID, "PubKey": PUB_KEY})
     publish(Queue.KEY, msg)
+
 
 def get_keys(body, public_keys: dict[int, str], clients: set[int]) -> dict[int, str]:
     # public_keys = {NODEID: PUB_KEY}
 
     body = json.loads(body)
-    new_key = body['PubKey']
-    new_client = int(body['NodeID'])
+    new_key = body["PubKey"]
+    new_client = int(body["NodeID"])
     print(f"Cliente {new_client} mandou uma chave")
 
     if new_client in clients and new_client not in public_keys.keys():
@@ -115,21 +118,20 @@ def get_keys(body, public_keys: dict[int, str], clients: set[int]) -> dict[int, 
             return False, public_keys
     return True, public_keys
 
+
 def vote_leader() -> None:
-    election_number = randint(0, (1 << 32)-1)
-    election_msg = {
-        "NodeID": NODEID,
-        "ElectionNumber": election_number
-    }
+    election_number = randint(0, (1 << 32) - 1)
+    election_msg = {"NodeID": NODEID, "ElectionNumber": election_number}
     publish(Queue.ELEC, sign_message(election_msg))
+
 
 # TODO revisar essa func
 def get_leader(body: str, pub_keys: dict[int, str]) -> int:
     election_numbers = dict()
     body: dict = json.loads(body)
-    node_id = int(body['NodeID'])
-    election_number = int(body['ElectionNumber'])
-    signature = body.pop('Sign')
+    node_id = int(body["NodeID"])
+    election_number = int(body["ElectionNumber"])
+    signature = body.pop("Sign")
 
     if node_id in pub_keys.keys():
         print(f"Recebi um voto do {node_id}")
@@ -161,34 +163,33 @@ def publish_challenge(tid: int) -> None:
     }
     publish(Queue.CHAL, sign_message(msg))
 
+
 def get_challenge(body: str) -> int:
     body = json.loads(body)
-    tid = int(body['TransactionNumber'])
-    sender = int(body['NodeID'])
-    challenge = int(body['Challenge'])
-    signature = body.pop('Sign')
+    tid = int(body["TransactionNumber"])
+    sender = int(body["NodeID"])
+    challenge = int(body["Challenge"])
+    signature = body.pop("Sign")
 
     if sender == leader and tid == LAST_TRANS and check_signature(body, signature):
         return False, challenge
 
     return True, None
 
+
 def publish_solution(seed: str, tid: int):
-    msg = {
-        'NodeID': NODEID,
-        'TransactionNumber': tid,
-        'Seed': seed
-    }
+    msg = {"NodeID": NODEID, "TransactionNumber": tid, "Seed": seed}
     publish(Queue.SOL, sign_message(msg))
+
 
 # TODO essa função está incompleta
 def vote_solutions(queue: str) -> None:
     for _, _, body in MANAGING_CHANN.consume(queue):
         body = json.loads(body)
-        tid = int(body['TransactionNumber'])
-        seed = body['Seed']
-        sender = int(body['NodeID'])
-        signature = body.pop('Sign')
+        tid = int(body["TransactionNumber"])
+        seed = body["Seed"]
+        sender = int(body["NodeID"])
+        signature = body.pop("Sign")
         if check_signature(body, signature):
             print(f"Votando na solução {seed} mandada por {sender}")
             publish_vote(check_solution(seed))
@@ -199,21 +200,24 @@ def vote_solutions(queue: str) -> None:
                 break
     MANAGING_CHANN.cancel()
 
+
 def publish_vote():
     pass
+
 
 def get_votes():
     pass
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     n = input("Insira o número de participantes: ")
 
-    init_queue      = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
-    key_queue       = set_exchange(MANAGING_CHANN, Queue.KEY,  "fanout")
-    election_queue  = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
+    init_queue = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
+    key_queue = set_exchange(MANAGING_CHANN, Queue.KEY, "fanout")
+    election_queue = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
     challenge_queue = set_exchange(MANAGING_CHANN, Queue.CHAL, "fanout")
-    solution_queue  = set_exchange(MANAGING_CHANN, Queue.SOL,  "fanout")
-    voting_queue    = set_exchange(MANAGING_CHANN, Queue.VOTE, "fanout")
+    solution_queue = set_exchange(MANAGING_CHANN, Queue.SOL, "fanout")
+    voting_queue = set_exchange(MANAGING_CHANN, Queue.VOTE, "fanout")
 
     # CHECK-IN
     publish_ID()
@@ -223,7 +227,7 @@ if __name__=="__main__":
     # KEY EXCHANGE
     publish_key()
     public_keys = get_keys(key_queue, participants)
-    print("Chaves lidas:", *public_keys.items(), sep='\n')
+    print("Chaves lidas:", *public_keys.items(), sep="\n")
 
     # VOTING
     vote_leader()
