@@ -28,7 +28,7 @@ def sign_message(msg: dict) -> str:
     msg_digest = SHA256.new(msg_json.encode(ENCONDING))
 
     signature = SIGNER.sign(msg_digest)
-    msg.update({"Sign": signature})
+    msg.update({"Sign": signature.hex()})
     return json.dumps(msg)
 
 

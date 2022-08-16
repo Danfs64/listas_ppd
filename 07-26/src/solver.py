@@ -5,6 +5,7 @@ from random import choices
 from settings import *
 from domain import Queue
 from rabbit_handler.handler import *
+from signature import sign_message
 
 def check_seed(seed: str, challenge: int) -> bool:
     byte_seed = seed.encode(ENCONDING)
@@ -14,21 +15,30 @@ def check_seed(seed: str, challenge: int) -> bool:
 
     return solution_bits == 0
 
-def publish_solution(seed: str, tid: int):
-    msg = {"NodeID": NODEID, "TransactionNumber": tid, "Seed": seed}
-    publish(Queue.SOL, sign_message(msg))
+def publish_solution(chann, seed: str, tid: int):
+    msg = {"NodeId": NODEID, "TransactionNumber": tid, "Seed": seed}
+    msg_json = sign_message(msg)
+    chann.basic_publish(
+        exchange=Queue.SOL.value,
+        routing_key='',
+        body=msg_json
+    )    
 
 
-def solve_challenge(challenge: int, transaction_id: int) -> int:
-    conn = pika.BlockingConnection()
+def solve_challenge(tupla) -> int:
+    challenge, transaction_id = tupla
+    credentials = pika.credentials.PlainCredentials("admin", "admin")
+    conn = pika.BlockingConnection(
+        pika.ConnectionParameters(host=HOSTNAME, heartbeat=600, credentials=credentials)
+    )
     chann = conn.channel()
-    solution_queue = set_exchange(chann, Queue.SOL, "fanout")
+    solution_queue = set_exchange(chann, Queue.SOL.value, "fanout")
     while True:
-        seed = "".join(choices(SEED_ALPHABET, 15))
+        seed = "".join(choices(SEED_ALPHABET, k=15))
         if check_seed(seed, challenge):
-            publish_solution(seed, transaction_id)
+            publish_solution(chann, seed, transaction_id)
 
 
-def try_to_solve_challenge(challenge: int, n_processees: int):
+def try_to_solve_challenge(challenge: int, transaction_id: int, n_processees: int):
     with Pool(n_processees) as p:
-        _ = p.map(solve_challenge, [challenge] * n_processees)
+        _ = p.map(solve_challenge, [(challenge, transaction_id)] * n_processees)
