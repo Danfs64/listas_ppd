@@ -35,3 +35,12 @@ def get(
         loop_again, collection = get_func(body, collection, *args)
     MANAGING_CHANN.cancel()
     return collection
+
+
+def set_exchange(chann, exchange: str, exchange_type: str) -> str:
+    chann.exchange_declare(exchange=exchange, exchange_type=exchange_type)
+    queue = chann.queue_declare(queue="", exclusive=True)
+
+    queue_name = queue.method.queue
+    chann.queue_bind(exchange=exchange, queue=queue_name)
+    return queue_name
