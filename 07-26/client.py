@@ -140,14 +140,23 @@ def vote_leader() -> None:
     election_msg = {"NodeID": NODEID, "ElectionNumber": election_number}
     publish(Queue.ELEC, sign_message(election_msg))
 
-def get_leader(leader_queue: str):
-    get(get_leader_wrapper, leader_queue, )
-    # TODO o get acima retorna um dict, tirar o vencedor da eleição a partir desse dict (linhas 166-175)
-
-
 
 # TODO revisar essa func
-def get_leader_wrapper(body: str, pub_keys: dict[int, str]) -> int:
+def get_leader(leader_queue: str, pub_keys: dict[int, str]) -> int:
+    votes = get(_get_leader_wrapper, leader_queue, [pub_keys], collection=dict())
+    # Define o maior election number
+    maior_voto = max(votes.values())
+    # O vencedor é quem votou com o maior election number
+    leader = [
+        n_id
+        for n_id, e_number in votes.items()
+        if e_number == maior_voto
+    ]
+    # O desempate é pegar o maior nodeID dos que votaram o maior election number
+    return max(leader)
+
+
+def _get_leader_wrapper(body: str, pub_keys: dict[int, str]) -> int:
     election_numbers = dict()
     body: dict = json.loads(body)
     node_id = int(body["NodeID"])
@@ -163,17 +172,8 @@ def get_leader_wrapper(body: str, pub_keys: dict[int, str]) -> int:
             # vote_leader() # Mas não pode ser um voto diferente. Gerar voto fora da vote_leader?
 
         if len(pub_keys) == len(election_numbers):
-            # Define o maior election number
-            maior_voto = max(election_numbers.values())
-            # O vencedor é quem votou com o maior election number
-            leader = [
-                n_id
-                for n_id, e_number in election_numbers.items()
-                if e_number == maior_voto
-            ]
-            # O desempate é pegar o maior nodeID dos que votaram o maior election number
-            return False, max(leader)
-    return True, None
+            return False, election_numbers
+    return True, election_numbers
 
 
 def publish_challenge(tid: int) -> None:
