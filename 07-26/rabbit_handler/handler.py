@@ -1,6 +1,7 @@
+from ctypes import Union
 from ..settings import *
 from ..domain import Queue
-from typing import Callable, Any, Collection
+from typing import Callable, Any, Collection, Iterable, Union
 
 
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
@@ -21,7 +22,7 @@ blocking = type(MANAGING_CHANN)
 
 
 def get(
-    get_func: Callable[[Any], (bool, Collection | int)],
+    get_func: Callable[[str, Iterable, Any], (bool, Union[Collection, int])],
     queue,
     args: list,
     collection=None,

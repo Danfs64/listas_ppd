@@ -1,11 +1,13 @@
 from random import randint, choices
 import json
 from hashlib import sha1
+from multiprocessing import Pool
+from functools import partial
 
-import pika
 from Crypto.Hash import SHA256
 from Crypto.Signature import PKCS1_v1_5
 
+from rabbit_handler.handler import get
 from settings import *
 from domain import Queue, Transaction
 from assert_doente_do_dan import get_keys
@@ -37,6 +39,11 @@ def solve_challenge(challenge: int) -> int:
         if check_seed(seed, challenge):
             # TODO Talvez ao invês de retornar, essa func pode só mandar pra fila direto
             return seed
+
+
+def try_to_solve_challenge(challenge: int, n_processees: int):
+    with Pool(n_processees) as p:
+        _ = p.map(solve_challenge, [challenge] * n_processees)
 
 
 def set_exchange(chann, exchange: str, exchange_type: str) -> str:
@@ -78,8 +85,14 @@ def publish_ID() -> None:
     publish(Queue.INIT, init_msg)
 
 
-def get_IDs(body, clients, n: int) -> set[int]:
+
+
+def get_IDs(ids_queue: str, n: int) -> set[int]:
     # clients = {NODEID}
+    return get(_get_IDs_wrapper, ids_queue, [n], collection={NODEID})
+
+
+def _get_IDs_wrapper(body, clients, n):
     new_client = int(json.loads(body)["NodeID"])
     print(f"Cliente {new_client} fez check-in")
 
@@ -94,13 +107,16 @@ def get_IDs(body, clients, n: int) -> set[int]:
             False, clients
     return True, clients
 
-
 def publish_key() -> None:
     msg = json.dumps({"NodeID": NODEID, "PubKey": PUB_KEY})
     publish(Queue.KEY, msg)
 
 
-def get_keys(body, public_keys: dict[int, str], clients: set[int]) -> dict[int, str]:
+def get_keys(keys_queue: str, clients: set[int]):
+    return get(_get_keys_wrapper, keys_queue, [clients], collection={NODEID: PUB_KEY})
+
+
+def _get_keys_wrapper(body, public_keys: dict[int, str], clients: set[int]) -> dict[int, str]:
     # public_keys = {NODEID: PUB_KEY}
 
     body = json.loads(body)
@@ -124,9 +140,14 @@ def vote_leader() -> None:
     election_msg = {"NodeID": NODEID, "ElectionNumber": election_number}
     publish(Queue.ELEC, sign_message(election_msg))
 
+def get_leader(leader_queue: str):
+    get(get_leader_wrapper, leader_queue, )
+    # TODO o get acima retorna um dict, tirar o vencedor da eleição a partir desse dict (linhas 166-175)
+
+
 
 # TODO revisar essa func
-def get_leader(body: str, pub_keys: dict[int, str]) -> int:
+def get_leader_wrapper(body: str, pub_keys: dict[int, str]) -> int:
     election_numbers = dict()
     body: dict = json.loads(body)
     node_id = int(body["NodeID"])
@@ -190,9 +211,9 @@ def vote_solutions(queue: str) -> None:
         seed = body["Seed"]
         sender = int(body["NodeID"])
         signature = body.pop("Sign")
-        if check_signature(body, signature):
+        if tid == LAST_TRANS and check_signature(body, signature):
             print(f"Votando na solução {seed} mandada por {sender}")
-            publish_vote(check_solution(seed))
+            issue_vote(seed)
 
             # TODO Checar resultado da votação
 
@@ -201,8 +222,22 @@ def vote_solutions(queue: str) -> None:
     MANAGING_CHANN.cancel()
 
 
-def publish_vote():
+def votacao_passou():
     pass
+
+
+
+
+def issue_vote(seed: str):
+    vote_result = int(check_seed(seed))
+    vote_msg = {
+        "NodeID": NODEID,
+        "TransactionNumber": LAST_TRANS,
+        "Seed": seed,
+        "Vote": vote_result
+    }
+    vote_json = sign_message(vote_msg)
+    publish(Queue.VOTE, vote_json)
 
 
 def get_votes():
@@ -212,12 +247,12 @@ def get_votes():
 if __name__ == "__main__":
     n = input("Insira o número de participantes: ")
 
-    init_queue = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
-    key_queue = set_exchange(MANAGING_CHANN, Queue.KEY, "fanout")
-    election_queue = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
+    init_queue      = set_exchange(MANAGING_CHANN, Queue.INIT, "fanout")
+    key_queue       = set_exchange(MANAGING_CHANN, Queue.KEY , "fanout")
+    election_queue  = set_exchange(MANAGING_CHANN, Queue.ELEC, "fanout")
     challenge_queue = set_exchange(MANAGING_CHANN, Queue.CHAL, "fanout")
-    solution_queue = set_exchange(MANAGING_CHANN, Queue.SOL, "fanout")
-    voting_queue = set_exchange(MANAGING_CHANN, Queue.VOTE, "fanout")
+    solution_queue  = set_exchange(MANAGING_CHANN, Queue.SOL , "fanout")
+    voting_queue    = set_exchange(MANAGING_CHANN, Queue.VOTE, "fanout")
 
     # CHECK-IN
     publish_ID()
