@@ -27,9 +27,8 @@ def publish_solution(chann, seed: str, tid: int):
 
 def solve_challenge(tupla) -> int:
     challenge, transaction_id = tupla
-    credentials = pika.credentials.PlainCredentials("admin", "admin")
     conn = pika.BlockingConnection(
-        pika.ConnectionParameters(host=HOSTNAME, heartbeat=600, credentials=credentials)
+        pika.ConnectionParameters(host=HOSTNAME, heartbeat=600, credentials=PIKA_CREDENTIALS)
     )
     chann = conn.channel()
     solution_queue = set_exchange(chann, Queue.SOL.value, "fanout")

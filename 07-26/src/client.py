@@ -163,9 +163,8 @@ def get_challenge(chal_queue: str):
 
 
 def vote_solutions(voting_queue: str) -> None:
-    credentials = pika.credentials.PlainCredentials("admin", "admin")
     read_solution_conn = pika.BlockingConnection(
-        pika.ConnectionParameters(host=HOSTNAME, heartbeat=600, credentials=credentials)
+        pika.ConnectionParameters(host=HOSTNAME, heartbeat=600, credentials=PIKA_CREDENTIALS)
     )
     read_solution_chann = read_solution_conn.channel()
     solution_queue = set_exchange(read_solution_chann, Queue.SOL.value, "fanout")
