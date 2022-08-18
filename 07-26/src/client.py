@@ -1,8 +1,8 @@
 import multiprocessing
 from random import randint
 import json
-from hashlib import sha1
-from multiprocessing import Pool, Process
+# from hashlib import sha1
+# from multiprocessing import Pool, Process
 import os, signal
 
 from Crypto.PublicKey import RSA
@@ -14,14 +14,13 @@ from domain import Queue, Transaction
 from solver import *
 from signature import sign_message, check_signature, PUB_KEY
 
-# TODO os reenvios de mensagens tem que ser de n em n tempo
-# Não é difícil fazer, mas é chato
-
 
 def kill_children():
     children = multiprocessing.active_children()
     for child in children:
         child.kill()
+
+signal.signal(signal.SIGINT, kill_children)
 signal.signal(signal.SIGTERM, kill_children)
 
 
@@ -53,7 +52,7 @@ def get_IDs(ids_queue: str, n: int):# -> set[int]:
             publish_ID()
 
             print(f"Clientes conhecidos ({len(clients)}): {clients}")
-            # print(n, len(clients), n == len(clients))
+
             if len(clients) == n:
                 return False, clients
         return True, clients
@@ -87,7 +86,7 @@ def get_keys(
         if new_client in clients and new_client not in public_keys.keys():
             print(f"A chave do cliente {new_client} é uma chave nova")
             public_keys[new_client] = RSA.import_key(new_key)
-            # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
+            # Reenvia a chave sempre que detecta uma nova
             publish_key()
 
             if len(public_keys) == len(clients):
@@ -119,10 +118,8 @@ def get_leader(leader_queue: str) -> int:
                 node_id not in election_numbers and
                 check_signature(body, signature, pub_keys[node_id])
             ):
-                print(f"{node_id} votou validamente em um líder")
+                print(f"{node_id} votou validamente, com o número {election_number}")
                 election_numbers[node_id] = election_number
-                # Reenvia a chave sempre que detecta uma nova, talvez deva ter um timer
-                # vote_leader() # Mas não pode ser um voto diferente. Gerar voto fora da vote_leader?
 
             if len(pub_keys) == len(election_numbers):
                 return False, election_numbers
@@ -141,7 +138,7 @@ def publish_challenge(tid: int) -> None:
     msg = {
         "NodeId": NODEID,
         "TransactionNumber": tid,
-        "Challenge": randint(MIN_CHALLENGE, MAX_CHALLENGE-10),
+        "Challenge": randint(MIN_CHALLENGE, MAX_CHALLENGE),
     }
     publish(Queue.CHAL.value, sign_message(msg))
 
@@ -198,15 +195,17 @@ def votacao_passou(
         tid = int(body["TransactionNumber"])
         signature = body.pop("Sign")
         if (
-            node_id in PUB_KEY_TABLE
-            and node_id not in votes_dict
-            and tid == LAST_TRANS
-            and check_signature(body, signature, PUB_KEY_TABLE[node_id])
+            node_id in PUB_KEY_TABLE and
+            node_id not in votes_dict and
+            tid == LAST_TRANS and
+            check_signature(body, signature, PUB_KEY_TABLE[node_id])
         ):
+            print(f"{node_id} votou {body['Vote']}")
             votes_dict[node_id] = int(body["Vote"])
         if len(votes_dict) == len(PUB_KEY_TABLE):
             return False, votes_dict
         return True, votes_dict
+
     votes_dict = get(_get_votes_wrapper, voting_queue, [], collection=dict())
     if sum(map(int, votes_dict.values())) > len(votes_dict)/2:
         return True
@@ -234,8 +233,15 @@ if __name__ == "__main__":
     challenge_queue = set_exchange(MANAGING_CHANN, Queue.CHAL.value, "fanout")
     solution_queue = set_exchange(MANAGING_CHANN, Queue.SOL.value, "fanout")
     voting_queue = set_exchange(MANAGING_CHANN, Queue.VOTE.value, "fanout")
+    print(f"INIT_QUEUE NAME: {init_queue}")
+    print(f"KEU_QUEUE NAME: {key_queue}")
+    print(f"ELECTION_QUEUE NAME: {election_queue}")
+    print(f"CHAL_QUEUE NAME: {challenge_queue}")
+    print(f"VOTING_QUEUE NAME: {voting_queue}")
+
 
     # CHECK-IN
+    print(f"Meu ID é {NODEID}")
     publish_ID()
     participants = get_IDs(init_queue, n)
     print(f"Nós que participarão: {participants}")
@@ -245,13 +251,13 @@ if __name__ == "__main__":
     PUB_KEY_TABLE = get_keys(key_queue, participants)
     print("Chaves lidas:", *PUB_KEY_TABLE.items(), sep="\n")
 
-    # VOTING
-    vote_leader()
-    leader = get_leader(election_queue)
-    print(f"O nó {leader} venceu a eleição")
-
     # ENDLESS LOOP
     while True:
+        # VOTING
+        vote_leader()
+        leader = get_leader(election_queue)
+        print(f"O nó {leader} venceu a eleição")
+
         # PUBLISHING CHALLENGE IF LEADER
         if NODEID == leader:
             publish_challenge(LAST_TRANS)
@@ -270,3 +276,5 @@ if __name__ == "__main__":
             TRANSACTIONS[LAST_TRANS].winner = winner
             LAST_TRANS += 1
             os.kill(pid, signal.SIGTERM)
+
+            print(*TRANSACTIONS.items(), sep='\n')
