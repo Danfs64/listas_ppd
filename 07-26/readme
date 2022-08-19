@@ -1,0 +1,11 @@
+# trabalho pica
+
+## Executando
+Rode python client.py e em seguida coloque o número de clientes que participarão do programa. Configurações como tamanho de challenges, Host e credenciais de acesso ao broker podem ser alteradas em settings/config.py
+
+## Considerações gerais da arquitetura:
+
+A ideia principal consiste em ter um processo "gerenciador" que fica consumindo da fila de soluções enquanto outro processo, chamado de "solver" spawna n processos filhos para tentar solucionar o challenge.
+Se o solver julga que encontrou uma solução, ele envia para a fila e continua procurando por novas soluções. Já o gerenciador, quando determina que algum cliente solucionou o desafio, envia um SIGTERM para o solver, que é processado para que este mate todos os filhos e não deixe processos zumbis, atualiza a tabela de transações, recebe/envia e recebe um novo challenge e cria um novo processo solver para este challenge.
+
+O solver tenta resolver o challenge gerando seeds aleatórias de um tamanho fixo.
